@@ -167,18 +167,25 @@ def clear_cache():
 
 
 def _load_dataframe() -> pd.DataFrame:
-    global _df
+    global _df, _report
     if _df is None:
-        if PICKLE_PATH.exists():
-            _df = pd.read_pickle(str(PICKLE_PATH))
-        elif RAW_CSV.exists():
-            logger.info("Cleaned pickle missing. Auto-cleaning from %s", RAW_CSV)
+        # Load from raw CSV or cleaned CSV directly to ensure version independence across pandas/numpy
+        if RAW_CSV.exists():
+            logger.info("Loading and cleaning raw dataset from %s", RAW_CSV)
             raw_df = load_raw_dataset(RAW_CSV)
-            _df, _ = clean_dataset(raw_df)
-            PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-            _df.to_pickle(str(PICKLE_PATH))
+            _df, _report = clean_dataset(raw_df)
+        elif (PROCESSED_DIR / "netflix_cleaned.csv").exists():
+            logger.info("Loading cleaned CSV from %s", PROCESSED_DIR / "netflix_cleaned.csv")
+            raw_df = load_raw_dataset(PROCESSED_DIR / "netflix_cleaned.csv")
+            _df, _report = clean_dataset(raw_df)
+        elif PICKLE_PATH.exists():
+            try:
+                _df = pd.read_pickle(str(PICKLE_PATH))
+            except Exception as exc:
+                logger.error("Pickle loading failed: %s", exc)
+                raise
         else:
-            raise FileNotFoundError(f"Dataset missing at {PICKLE_PATH} and {RAW_CSV}")
+            raise FileNotFoundError(f"Dataset missing at {RAW_CSV}")
     return _df
 
 

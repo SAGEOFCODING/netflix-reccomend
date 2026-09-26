@@ -32,36 +32,79 @@ _tfidf_matrix: Any = None
 _vectorizer: Any = None
 
 
-def load_artefacts(force: bool = False) -> bool:
-    """Load or reload the lean TF-IDF recommender artifact."""
+def _build_artefacts_on_the_fly() -> bool:
+    """Build the TF-IDF feature matrix on-the-fly from the catalog in ~1.5s."""
     global _loaded, _indices, _tfidf_matrix, _vectorizer
-
-    if _loaded and not force:
-        return True
-
-    if not _TFIDF_PATH.exists():
-        logger.warning("Recommender artifact missing at: %s", _TFIDF_PATH)
-        _loaded = False
-        return False
-
     try:
-        with open(_TFIDF_PATH, "rb") as f:
-            artifact = pickle.load(f)
+        import string
+        import re
+        from sklearn.feature_extraction.text import TfidfVectorizer
 
-        _vectorizer = artifact["vectorizer"]
-        _tfidf_matrix = artifact["matrix"]
-        _indices = artifact["indices"]
+        df = data_service.get_dataframe()
+
+        def build_soup(r):
+            parts = [
+                str(r.get("type") or ""),
+                str(r.get("title") or ""),
+                str(r.get("director") or ""),
+                str(r.get("cast") or ""),
+                str(r.get("country") or ""),
+                str(r.get("rating") or ""),
+                str(r.get("listed_in") or "") * 2,
+                str(r.get("description") or ""),
+            ]
+            text = " ".join(parts).lower()
+            text = text.translate(str.maketrans("", "", string.punctuation))
+            return re.sub(r"\s+", " ", text).strip()
+
+        soups = df.apply(build_soup, axis=1)
+        _vectorizer = TfidfVectorizer(
+            max_features=10000,
+            ngram_range=(1, 2),
+            stop_words="english",
+            sublinear_tf=True,
+        )
+        _tfidf_matrix = _vectorizer.fit_transform(soups)
+        _indices = pd.Series(df.index, index=df["show_id"].astype(str))
         _loaded = True
         logger.info(
-            "Lean recommender loaded: %d titles, feature matrix shape %s",
+            "Recommender built on-the-fly: %d titles, feature matrix shape %s",
             len(_indices),
             _tfidf_matrix.shape,
         )
         return True
     except Exception as exc:
-        logger.error("Failed to load lean recommender artifact: %s", exc)
+        logger.error("Failed to build recommender on-the-fly: %s", exc)
         _loaded = False
         return False
+
+
+def load_artefacts(force: bool = False) -> bool:
+    """Load pre-built TF-IDF recommender artifact or build on-the-fly."""
+    global _loaded, _indices, _tfidf_matrix, _vectorizer
+
+    if _loaded and not force:
+        return True
+
+    if _TFIDF_PATH.exists():
+        try:
+            with open(_TFIDF_PATH, "rb") as f:
+                artifact = pickle.load(f)
+
+            _vectorizer = artifact["vectorizer"]
+            _tfidf_matrix = artifact["matrix"]
+            _indices = artifact["indices"]
+            _loaded = True
+            logger.info(
+                "Lean recommender loaded: %d titles, feature matrix shape %s",
+                len(_indices),
+                _tfidf_matrix.shape,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Could not deserialize pickle artifact (%s); generating on-the-fly.", exc)
+
+    return _build_artefacts_on_the_fly()
 
 
 # Initial attempt to load artifacts at module import time
