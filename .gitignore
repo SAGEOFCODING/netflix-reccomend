@@ -1,0 +1,17 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+ENV/
+
+# OS artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Log files
+*.log
