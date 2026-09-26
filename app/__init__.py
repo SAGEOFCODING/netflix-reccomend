@@ -13,3 +13,7 @@ def create_app():
     app.register_blueprint(main_bp)
 
     return app
+
+
+# Expose app instance for WSGI servers (e.g. gunicorn app:app)
+app = create_app()
